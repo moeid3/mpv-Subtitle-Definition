@@ -43,25 +43,38 @@ def clean_word(word):
     return " ".join(cleaned_tokens)
 
 
-def define_words(words):
+def define_words(words, original_words):
     definitions = []
 
-    for word in words:
-        synsets = wn.synsets(word)
+    for word, original in zip(words, original_words):
+        # Detect POS from the original word
+        tagged = pos_tag([original])
+        wn_pos = get_wordnet_pos(tagged[0][1])
+
+        # First try the exact surface form
+        synsets = wn.synsets(original.lower(), pos=wn_pos)
 
         if not synsets:
-            definitions.append(f"{word}\n  Definition not found.")
+            synsets = wn.synsets(word, pos=wn_pos)
+
+        # Final fallback: ignore POS restriction
+        if not synsets:
+            synsets = wn.synsets(original.lower())
+
+        if not synsets:
+            synsets = wn.synsets(word)
+
+        if not synsets:
+            definitions.append(
+                f"{original}\n  Definition not found."
+            )
             continue
 
-        # First WordNet sense = usually most common sense
         synset = synsets[0]
 
-        definition = synset.definition()
+        result = f"{original}\n  {synset.definition()}"
 
         examples = synset.examples()
-
-        result = f"{word}\n  {definition}"
-
         if examples:
             result += f"\n  Example: {examples[0]}"
 
@@ -79,12 +92,16 @@ def find_obscure_words(input_string, known_words_dir=None):
 
     words = input_string.split()
     processed_words = []
+    original_words = []
 
     for word in words:
         cleaned = clean_word(word)
 
         if cleaned:
             processed_words.append(cleaned)
+            original_words.append(
+                re.sub(r"^[^\w]+|[^\w]+$", "", word).lower()
+            )
 
     known_words = set()
 
@@ -112,16 +129,18 @@ def find_obscure_words(input_string, known_words_dir=None):
             sys.exit(1)
 
     obscure_words = []
+    obscure_originals = []
 
-    for word in processed_words:
+    for word, original in zip(processed_words, original_words):
         if (
             word.lower() not in known_words
             and "'" not in word
             and word not in obscure_words
         ):
             obscure_words.append(word)
+            obscure_originals.append(original)
 
-    return obscure_words
+    return obscure_words, obscure_originals
 
 
 def main():
@@ -131,10 +150,10 @@ def main():
 
     input_string = sys.argv[1]
 
-    obscure_words = find_obscure_words(input_string)
+    obscure_words, original_words = find_obscure_words(input_string)
 
     if obscure_words:
-        print(define_words(obscure_words))
+        print(define_words(obscure_words, original_words))
     else:
         print("KNOWN")
 
